@@ -1,0 +1,154 @@
+---
+title: "Mapa Instituicoes"
+author: "Victor and Gustavo"
+date: "2024-05-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Carregando os pacotes
+
+```{r}
+library (readxl)
+library(dplyr)
+library (leaflet)
+library (sf)
+library (htmltools)
+```
+
+
+## Lendo o arquivo excel
+
+```{r}
+dados <- read_excel ("./instituicoes-unificado.xlsx")
+```
+
+## Separando e organizando os dados
+
+### Filtrando os cursos ativos e instituições ativas
+```{r}
+cursos_ativos <- dados %>%
+  filter(atividade_curso %in% c("ATIVO", "NOVO"))
+```
+
+### Agrupando as instituições e colocando todos os cursos em uma única linha
+```{r}
+dados_agrupados <- cursos_ativos %>%
+  group_by(instituicao, long, lat) %>%
+  summarise(curso = paste(curso, collapse = ", "), .groups = 'drop') %>%
+  ungroup()
+```
+
+### Transformando os dados para o formato "sf" para utilizá-los para gerar o mapa
+```{r}
+pontos_sf <- st_as_sf(dados_agrupados, coords = c("long", "lat"), crs = 4326)
+```
+
+###########################################################
+### Filtrando os cursos inativos e instituições inativas###
+```{r}
+cursos_inat <- dados %>%
+  filter(atividade_curso %in% "EXTINTA")
+```
+
+### Agrupando as instituições e colocando todos os cursos em uma única linha
+```{r}
+dados_agrupados_in <- cursos_inat %>%
+  group_by(instituicao, long, lat) %>%
+  summarise(curso = paste(curso, collapse = ", "), .groups = 'drop') %>%
+  ungroup()
+```
+
+### Transformando os dados para o formato "sf" para utilizá-los para gerar o mapa
+```{r}
+pontos_sf_inat <- st_as_sf(dados_agrupados_in, coords = c("long", "lat"), crs = 4326)
+```
+
+###########################################################
+###Criando um ponto para o Campus Lagoa do Sino ###########
+```{r}
+cursos_lagoa <- dados %>%
+  filter(instituicao %in% "UNIVERSIDADE FEDERAL DE SÃO CARLOS - UFSCAR")
+```
+
+```{r}
+dados_agrupados_lagoa <- cursos_lagoa %>%
+  group_by(instituicao, long, lat) %>%
+  summarise(curso = paste(curso, collapse = ", "), .groups = 'drop') %>%
+  ungroup()
+```
+
+```{r}
+pontos_sf_lagoa <- st_as_sf(dados_agrupados_lagoa, coords = c("long", "lat"), crs = 4326)
+```
+
+
+# Criando o mapa
+
+```{r}
+mapa <- leaflet() %>%
+  addTiles() %>% # Adicione o fundo do mapa
+  addCircles(lng = -48.529444, lat = -23.599167, radius = 90000, color = "purple", fillOpacity = 0.2) %>% # Adicione o buffer
+  addCircleMarkers(data = pontos_sf, # Adicione os marcadores dos pontos
+                   color = "blue",
+                   radius = 4, # Tamanho dos pontos
+                   fillOpacity = 1, # Opacidade dos pontos
+                   stroke = FALSE, # Sem borda nos pontos
+                   label = lapply(paste("<strong>Instituição:</strong> ", dados_agrupados$instituicao, "<br>", "<strong>Cursos:</strong> ", dados_agrupados$curso), HTML)
+  ) %>%
+  addCircleMarkers(data = pontos_sf_lagoa, # Adicione os marcadores dos pontos dos cursos do Campus Lagoa do Sino
+                   color = "green", # Cor dos pontos
+                   radius = 4, # Tamanho dos pontos
+                   fillOpacity = 1, # Opacidade dos pontos
+                   stroke = FALSE, # Sem borda nos pontos
+                   label = lapply(paste("<strong>Instituição:</strong> ", dados_agrupados_lagoa$instituicao, "<br>", "<strong>Cursos:</strong> ", dados_agrupados_lagoa$curso), HTML)
+  ) %>%
+  addCircleMarkers(data = pontos_sf_inat, # Adicione os marcadores dos pontos das universidades desativadas
+                   color = "red", # Cor dos pontos
+                   radius = 4, # Tamanho dos pontos
+                   fillOpacity = 1, # Opacidade dos pontos
+                   stroke = FALSE, # Sem borda nos pontos
+                   label = lapply(paste("<strong>Instituição:</strong> ", dados_agrupados_in$instituicao, "<br>",
+                                        "<strong>Cursos:</strong> ", dados_agrupados_in$curso), HTML)
+  )
+```
+
+```{r}
+mapa <- mapa %>%
+  addLegend(position = "topright", # Posição da legenda
+            colors = c("blue", "green", "red"), # Cores dos símbolos
+            labels = c("Universidades Ativas", "Campus Lagoa do Sino", "Universidades Inativas"), # Etiquetas
+            title = "Legenda" # Título da legenda
+  ) %>%
+  addControl(
+    html = paste("<div style='font-size: 18px; font-weight: bold; color: black;'>Instituições de Ensino Superior em um raio de 60km do Campus Lagoa do Sino</div>"),
+    position = "topleft", 
+    className = "map-title"
+  )
+css <- "
+.map-title {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  background-color: white;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 18px;
+  font-weight: bold;
+  color: black;
+}"
+
+mapa <- htmlwidgets::prependContent(mapa, tags$style(css))
+```
+
+```{r}
+mapa
+```
